@@ -14,10 +14,10 @@ const openai = new OpenAI({
 // Middleware
 app.use(cors({
   origin: (origin, cb) => {
-    // Allow extension origins and localhost in dev
-    if (!origin) return cb(null, true);
+    // Allow extension origins and local dev (incl. Origin: null / 127.0.0.1 edge cases)
+    if (!origin || origin === 'null') return cb(null, true);
     if (origin.startsWith('chrome-extension://')) return cb(null, true);
-    if (/^http:\/\/localhost(:\d+)?$/i.test(origin)) return cb(null, true);
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return cb(null, true);
     return cb(null, false);
   },
   methods: ['POST', 'OPTIONS'],
@@ -83,6 +83,41 @@ function trimResumeForOnePage(resume) {
   return resume;
 }
 
+function sanitizeProfileForLLM(profile = {}) {
+  return {
+    ...profile,
+    name: '[CANDIDATE_NAME]',
+    contact: '[CANDIDATE_CONTACT]'
+  };
+}
+
+function hydrateSensitiveValuesInString(value, originalProfile = {}) {
+  if (typeof value !== 'string') return value;
+  const hydratedName = typeof originalProfile.name === 'string' ? originalProfile.name : '';
+  const hydratedContact = typeof originalProfile.contact === 'string' ? originalProfile.contact : '';
+
+  return value
+    .replaceAll('[CANDIDATE_NAME]', hydratedName || '[CANDIDATE_NAME]')
+    .replaceAll('[CANDIDATE_CONTACT]', hydratedContact || '[CANDIDATE_CONTACT]');
+}
+
+function hydrateSensitiveValues(payload, originalProfile = {}) {
+  if (typeof payload === 'string') {
+    return hydrateSensitiveValuesInString(payload, originalProfile);
+  }
+  if (Array.isArray(payload)) {
+    return payload.map(item => hydrateSensitiveValues(item, originalProfile));
+  }
+  if (payload && typeof payload === 'object') {
+    const out = {};
+    for (const [key, value] of Object.entries(payload)) {
+      out[key] = hydrateSensitiveValues(value, originalProfile);
+    }
+    return out;
+  }
+  return payload;
+}
+
 
 
 // Resume generation endpoint
@@ -115,9 +150,10 @@ app.post('/generateResume', async (req, res) => {
     console.log('Detected company:', companyName);
     console.log('Detected role:', roleName);
 
-    // Enhanced prompt with one-page logic and Must Include handling
-    const mustIncludeExperiences = profile.experiences.filter(exp => exp.mustInclude);
-    const mustIncludeProjects = profile.projects.filter(proj => proj.mustInclude);
+    // Build a sanitized, allowlisted profile before sending data to the model
+    const llmProfile = sanitizeProfileForLLM(profile);
+    const mustIncludeExperiences = llmProfile.experiences.filter(exp => exp.mustInclude);
+    const mustIncludeProjects = llmProfile.projects.filter(proj => proj.mustInclude);
     
 const systemPrompt = `You are a resume writer who creates truthful, concise, ATS-friendly
 one-page resumes. Do NOT fabricate experiences, programs, or certifications.
@@ -143,15 +179,15 @@ JOB POSTING:
 ${jobText}
 
 CANDIDATE PROFILE:
-Name: ${profile.name}
-Location: ${profile.location || 'Not specified'}
-Education: ${profile.education?.degreeType || ''} ${profile.education?.major || ''}, ${profile.education?.university || 'Not specified'}${profile.education?.start && profile.education?.end ? ` (${profile.education.start} - ${profile.education.end})` : ''}${profile.education?.gpa ? `, GPA: ${profile.education.gpa}` : ''}
+Name: ${llmProfile.name}
+Location: ${llmProfile.location || 'Not specified'}
+Education: ${llmProfile.education?.degreeType || ''} ${llmProfile.education?.major || ''}, ${llmProfile.education?.university || 'Not specified'}${llmProfile.education?.start && llmProfile.education?.end ? ` (${llmProfile.education.start} - ${llmProfile.education.end})` : ''}${llmProfile.education?.gpa ? `, GPA: ${llmProfile.education.gpa}` : ''}
 
-Skills: ${profile.skills ? profile.skills.join(', ') : 'None listed'}
+Skills: ${llmProfile.skills ? llmProfile.skills.join(', ') : 'None listed'}
 
 Must-Include Experiences: ${mustIncludeExperiences.map(e => `${e.title} at ${e.company}`).join('; ') || 'None'}
 Experiences:
-${profile.experiences ? profile.experiences.map(exp => {
+${llmProfile.experiences ? llmProfile.experiences.map(exp => {
   let s = `${exp.title} at ${exp.company} (${exp.start} - ${exp.end}, ${exp.location})`;
   if (exp.description) s += `\nRole: ${exp.description}`;
   if (exp.bullets?.length) s += `\nKey Achievements: ${exp.bullets.join('; ')}`;
@@ -160,7 +196,7 @@ ${profile.experiences ? profile.experiences.map(exp => {
 
 Must-Include Projects: ${mustIncludeProjects.map(p => p.name).join('; ') || 'None'}
 Projects:
-${profile.projects ? profile.projects.map(proj => {
+${llmProfile.projects ? llmProfile.projects.map(proj => {
   let s = proj.name;
   if (proj.description) s += `\nDescription: ${proj.description}`;
   if (proj.bullets?.length) s += `\nKey Details: ${proj.bullets.join('; ')}`;
@@ -168,7 +204,7 @@ ${profile.projects ? profile.projects.map(proj => {
 }).join('\n\n') : 'None listed'}
 
 Programs/Certifications (if any):
-${Array.isArray(profile.programs) && profile.programs.length ? profile.programs.join('\n') : 'None'}
+${Array.isArray(llmProfile.programs) && llmProfile.programs.length ? llmProfile.programs.join('\n') : 'None'}
 
 OUTPUT JSON (omit a section key if you have no content for it):
 {
@@ -191,16 +227,85 @@ OUTPUT JSON (omit a section key if you have no content for it):
 }`;
 
 
+    // Define JSON schema for structured resume output
+    const resumeResponseFormat = {
+      type: "json_schema",
+      json_schema: {
+        name: "resume_response",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            skills: {
+              type: "array",
+              items: { type: "string" }
+            },
+            education: {
+              type: "object",
+              properties: {
+                degree: { type: "string" },
+                school: { type: "string" },
+                location: { type: "string" },
+                dates: { type: "string" },
+                gpa: { type: "string" }
+              },
+              additionalProperties: false
+            },
+            experience: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  company: { type: "string" },
+                  dates: { type: "string" },
+                  location: { type: "string" },
+                  bullets: {
+                    type: "array",
+                    items: { type: "string" }
+                  }
+                },
+                required: ["title", "company", "dates", "location", "bullets"],
+                additionalProperties: false
+              }
+            },
+            projects: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  link: { type: "string" },
+                  bullets: {
+                    type: "array",
+                    items: { type: "string" }
+                  }
+                },
+                required: ["name", "bullets"],
+                additionalProperties: false
+              }
+            },
+            programs: {
+              type: "array",
+              items: { type: "string" }
+            }
+          },
+          additionalProperties: false
+        }
+      }
+    };
+
     // Call OpenAI API
     let completion;
     try {
       completion = await openai.chat.completions.create({
-        model: "gpt-4-turbo",
+        model: "gpt-5.4-nano-2026-03-17",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
         ],
-        response_format: { type: "json_object" },
+        response_format: resumeResponseFormat,
         temperature: 0.8,
         max_tokens: 4000
       });
@@ -222,6 +327,7 @@ OUTPUT JSON (omit a section key if you have no content for it):
 
       // Enforce one-page heuristics (caps bullets/counts/length)
       parsedResponse = trimResumeForOnePage(parsedResponse);
+      parsedResponse = hydrateSensitiveValues(parsedResponse, profile);
 
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
@@ -238,8 +344,17 @@ OUTPUT JSON (omit a section key if you have no content for it):
     console.log(`[${new Date().toISOString()}] Resume generated successfully in ${endTime - startTime}ms`);
     
     // Return the structured response
+    const resumeContent = {
+      ...parsedResponse,
+      header: {
+        name: typeof profile.name === 'string' ? profile.name : '',
+        contact: typeof profile.contact === 'string' ? profile.contact : '',
+        location: typeof profile.location === 'string' ? profile.location : ''
+      }
+    };
+
     return res.json({
-      resumeContent: parsedResponse,
+      resumeContent,
       metadata: {
         generatedAt: new Date().toISOString(),
         processingTime: endTime - startTime
@@ -295,6 +410,8 @@ app.post('/generateCoverLetter', async (req, res) => {
     console.log('Detected company:', companyName);
     console.log('Detected role:', roleName);
 
+    const llmProfile = sanitizeProfileForLLM(profile);
+
     // Construct the enhanced prompt
     const systemPrompt = `You are an elite executive cover letter consultant. You MUST follow ALL instructions precisely. You write consultant-level pitches that sound like strategic business proposals, NOT job applications. You NEVER use generic phrases, clichés, or beggar language. Every word must demonstrate unique value and insider knowledge.`;
     
@@ -339,26 +456,26 @@ Job Post:
 ${jobText}
 
 My Profile:
-Name: ${profile.name}
-Contact: ${profile.contact}
-Education: ${profile.education?.degreeType || ''} ${profile.education?.major || ''}, ${profile.education?.university || 'Not specified'}${profile.education?.start && profile.education?.end ? ` (${profile.education.start} - ${profile.education.end})` : ''}${profile.education?.gpa ? `, GPA: ${profile.education.gpa}` : ''}
-Skills: ${profile.skills ? profile.skills.join(', ') : 'None listed'}
+Name: ${llmProfile.name}
+Contact: ${llmProfile.contact}
+Education: ${llmProfile.education?.degreeType || ''} ${llmProfile.education?.major || ''}, ${llmProfile.education?.university || 'Not specified'}${llmProfile.education?.start && llmProfile.education?.end ? ` (${llmProfile.education.start} - ${llmProfile.education.end})` : ''}${llmProfile.education?.gpa ? `, GPA: ${llmProfile.education.gpa}` : ''}
+Skills: ${llmProfile.skills ? llmProfile.skills.join(', ') : 'None listed'}
 
-Work Experience: ${profile.experiences ? profile.experiences.map(exp => {
+Work Experience: ${llmProfile.experiences ? llmProfile.experiences.map(exp => {
   let expStr = `${exp.title} at ${exp.company} (${exp.start} - ${exp.end}, ${exp.location})`;
   if (exp.description) expStr += `\nRole: ${exp.description}`;
   if (exp.bullets && exp.bullets.length > 0) expStr += `\nKey Achievements: ${exp.bullets.join('; ')}`;
   return expStr;
 }).join('\n\n') : 'None listed'}
 
-Projects: ${profile.projects ? profile.projects.map(proj => {
+Projects: ${llmProfile.projects ? llmProfile.projects.map(proj => {
   let projStr = proj.name;
   if (proj.description) projStr += `\nDescription: ${proj.description}`;
   if (proj.bullets && proj.bullets.length > 0) projStr += `\nKey Details: ${proj.bullets.join('; ')}`;
   return projStr;
 }).join('\n\n') : 'None listed'}
 
-Additional Experience: ${profile.extras ? profile.extras.map(extra => {
+Additional Experience: ${llmProfile.extras ? llmProfile.extras.map(extra => {
   let extraStr = `${extra.title} at ${extra.organization}`;
   if (extra.start && extra.end) extraStr += ` (${extra.start} - ${extra.end})`;
   if (extra.description) extraStr += `\nDescription: ${extra.description}`;
@@ -411,14 +528,14 @@ DO NOT include any other text outside the JSON response.`;
     while (retryCount <= maxRetries) {
       try {
         // Call OpenAI API with structured outputs
-        // Using gpt-4-turbo for better prompt following
+        // Using structured outputs with a strict JSON schema
         completion = await openai.chat.completions.create({
-          model: "gpt-4-turbo",
+          model: "gpt-5.4-nano-2026-03-17",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
           ],
-          response_format: { type: "json_object" },
+          response_format: responseFormat,
           temperature: 0.9,
           max_tokens: 3000
         });
@@ -427,15 +544,15 @@ DO NOT include any other text outside the JSON response.`;
         
       } catch (error) {
         if (error.code === 'model_not_found' || error.message?.includes('structured outputs')) {
-          // Fallback to json_object mode if strict schema not supported
-          console.log('Falling back to json_object mode');
+          // Retry with the same schema but lower creativity settings
+          console.log('Retrying with stricter structured output settings');
           completion = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: "gpt-5.4-nano-2026-03-17",
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: userPrompt + "\n\nIMPORTANT: Return only valid JSON with a single field 'coverLetter' containing the letter as a string." }
             ],
-            response_format: { type: "json_object" },
+            response_format: responseFormat,
             temperature: 0.7,
             max_tokens: 1500
           });
@@ -467,14 +584,14 @@ DO NOT include any other text outside the JSON response.`;
         console.log('JSON parse failed, retrying with explicit instructions');
         try {
           const retryCompletion = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: "gpt-5.4-nano-2026-03-17",
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: userPrompt },
               { role: "assistant", content: responseContent },
               { role: "user", content: "Please return valid JSON with only the coverLetter field. Format: {\"coverLetter\": \"your letter here\"}" }
             ],
-            response_format: { type: "json_object" },
+            response_format: responseFormat,
             temperature: 0.7,
             max_tokens: 1500
           });
@@ -511,7 +628,7 @@ DO NOT include any other text outside the JSON response.`;
     
     // Return the structured response
     res.json({
-      coverLetter: parsedResponse.coverLetter,
+      coverLetter: hydrateSensitiveValuesInString(parsedResponse.coverLetter, profile),
       metadata: {
         generatedAt: new Date().toISOString(),
         processingTime: endTime - startTime

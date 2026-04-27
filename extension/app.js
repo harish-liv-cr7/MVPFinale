@@ -1210,15 +1210,17 @@ class CoverLetterApp {
         const lineHeight = "1.25";
         const sectionSpacing = "0.8em";
         const entrySpacing = "0.6em";
+        const pageHorizontalPadding = "0.22in";
+        const sectionDividerBorder = "2.5pt solid #111";
 
         let formatted = `
             <div class="resume-page" style="
                 font-family: ${baseFont};
                 color: #000;
                 line-height: ${lineHeight};
-                max-width: 7.5in;
+                max-width: 8.06in;
                 margin: 0 auto;
-                padding: 0.5in;
+                padding: 0.5in ${pageHorizontalPadding};
                 background: white;
                 min-height: 10in;
                 box-sizing: border-box;
@@ -1251,7 +1253,7 @@ class CoverLetterApp {
                         font-size: ${sectionHeaderSize};
                         font-weight: bold;
                         text-transform: uppercase;
-                        border-bottom: 1pt solid #000;
+                        border-bottom: ${sectionDividerBorder};
                         padding-bottom: 2pt;
                     ">SKILLS & INTERESTS</h2>
                     <div style="font-size: ${bodyFontSize};">
@@ -1268,7 +1270,7 @@ class CoverLetterApp {
                     font-size: ${sectionHeaderSize};
                     font-weight: bold;
                     text-transform: uppercase;
-                    border-bottom: 1pt solid #000;
+                    border-bottom: ${sectionDividerBorder};
                     padding-bottom: 2pt;
                 ">EDUCATION & HONORS</h2>
 
@@ -1349,7 +1351,7 @@ class CoverLetterApp {
                         font-size: ${sectionHeaderSize};
                         font-weight: bold;
                         text-transform: uppercase;
-                        border-bottom: 1pt solid #000;
+                        border-bottom: ${sectionDividerBorder};
                         padding-bottom: 2pt;
                     ">EXPERIENCE</h2>
                     ${resume.experience.map(exp => `
@@ -1385,8 +1387,8 @@ class CoverLetterApp {
                         font-size: ${sectionHeaderSize};
                         font-weight: bold;
                         text-transform: uppercase;
-                        border-bottom: 1pt solid #000;
-                        padding-bottom: 2pt;6
+                        border-bottom: ${sectionDividerBorder};
+                        padding-bottom: 2pt;
                     ">PROJECTS</h2>
                     ${resume.projects.map(proj => `
                         <div class="project-entry" style="margin-bottom: ${entrySpacing};">
@@ -1417,7 +1419,7 @@ class CoverLetterApp {
                             font-size: ${sectionHeaderSize};
                             font-weight: bold;
                             text-transform: uppercase;
-                            border-bottom: 1pt solid #000;
+                            border-bottom: ${sectionDividerBorder};
                             padding-bottom: 2pt;
                         ">PROGRAMS / CERTIFICATIONS</h2>
                         <div style="font-size: ${bodyFontSize}; margin-bottom: 0.3em; line-height: 1.3;">
