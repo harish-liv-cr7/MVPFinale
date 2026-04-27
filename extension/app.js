@@ -306,6 +306,19 @@ class CoverLetterApp {
         }
     }
 
+    clearGenerationStatusAfter(ms = 3000) {
+        setTimeout(() => {
+            const statusEl = document.getElementById('generation-status');
+            if (statusEl) {
+                statusEl.textContent = '';
+            }
+        }, ms);
+    }
+
+    getDateStamp() {
+        return new Date().toISOString().split('T')[0];
+    }
+
     // Profile Management
     renderProfile() {
         // Safely set profile field values
@@ -707,12 +720,7 @@ class CoverLetterApp {
     saveProfile() {
         this.saveData();
                 this.showStatus('Profile saved successfully!', 'success');
-                setTimeout(() => {
-                    const statusEl = document.getElementById('generation-status');
-                    if (statusEl) {
-                        statusEl.textContent = '';
-                    }
-                }, 3000);
+                this.clearGenerationStatusAfter();
     }
 
     exportProfile() {
@@ -722,7 +730,7 @@ class CoverLetterApp {
         
         const link = document.createElement('a');
         link.href = url;
-        link.download = `cover-letter-profile-${new Date().toISOString().split('T')[0]}.json`;
+        link.download = `cover-letter-profile-${this.getDateStamp()}.json`;
         link.click();
         
         URL.revokeObjectURL(url);
@@ -741,12 +749,7 @@ class CoverLetterApp {
                 this.renderProfile();
                 this.saveData();
                 this.showStatus('Profile imported successfully!', 'success');
-                setTimeout(() => {
-                    const statusEl = document.getElementById('generation-status');
-                    if (statusEl) {
-                        statusEl.textContent = '';
-                    }
-                }, 3000);
+                this.clearGenerationStatusAfter();
             } else {
                 throw new Error('Invalid profile format');
             }
@@ -1000,7 +1003,7 @@ class CoverLetterApp {
             doc.text(this.profile.name, leftMargin, currentY);
 
             // Generate filename
-            const timestamp = new Date().toISOString().split('T')[0];
+            const timestamp = this.getDateStamp();
             const filename = `cover-letter-${timestamp}.pdf`;
 
             // Convert to blob
@@ -1022,10 +1025,7 @@ class CoverLetterApp {
                         this.fallbackDownload(url, filename);
                     } else {
                         this.showStatus('PDF downloaded successfully!', 'success');
-                        setTimeout(() => {
-                            const statusEl = document.getElementById('generation-status');
-                            if (statusEl) statusEl.textContent = '';
-                        }, 3000);
+                        this.clearGenerationStatusAfter();
                     }
                     
                     // Clean up
@@ -1054,10 +1054,7 @@ class CoverLetterApp {
         document.body.removeChild(link);
         
         this.showStatus('PDF downloaded successfully!', 'success');
-        setTimeout(() => {
-            const statusEl = document.getElementById('generation-status');
-            if (statusEl) statusEl.textContent = '';
-        }, 3000);
+        this.clearGenerationStatusAfter();
         
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
@@ -1153,12 +1150,6 @@ class CoverLetterApp {
             console.log('[PREVIEW] head:', this.lastRenderedResumeHTML.slice(0, 180));
 
             // notify that the preview is ready (optional; useful to re-enable the PDF button)
-            document.dispatchEvent(new CustomEvent('resume-rendered'));
-
-
-            // cache + log the exact preview HTML we just rendered
-            this.lastRenderedResumeHTML = previewEl.innerHTML;
-            console.log('[PREVIEW] render len:', this.lastRenderedResumeHTML.length);
             document.dispatchEvent(new CustomEvent('resume-rendered'));
         }, 100);
 
@@ -1623,166 +1614,6 @@ async downloadResumePDF() {
     this.showError('Failed to download resume PDF: ' + err.message);
   }
 }
-
-
-
-    async renderHTMLToPDF(doc, element) {
-        // alias element as node so both names work safely
-        const node = element;
-
-        if (!node) {
-            throw new Error('renderHTMLToPDF: no element/node passed');
-        }
-
-        
-        console.log('[renderHTMLToPDF] got node?', !!node, 'len=', node?.innerHTML?.length);
-        console.log('[renderHTMLToPDF] head=', node?.innerHTML?.slice(0, 180));
-        // ... existing code ...
-
-
-        // Professional resume PDF rendering with exact preview matching
-        const leftMargin = 36; // 0.5 inch in points
-        const rightMargin = 36;
-        const topMargin = 54;
-        const pageWidth = 612; // Letter size width in points
-        const pageHeight = 792; // Letter size height in points
-        const textWidth = pageWidth - leftMargin - rightMargin;
-        
-        let currentY = topMargin;
-        
-        // Extract and render each section
-        const header = element.querySelector('.resume-header');
-        if (header) {
-            currentY = await this.renderSection(doc, header, currentY, leftMargin, textWidth);
-        }
-        
-        const sections = element.querySelectorAll('.resume-section');
-        for (const section of sections) {
-            currentY = await this.renderSection(doc, section, currentY, leftMargin, textWidth);
-        }
-    }
-
-    async renderSection(doc, section, startY, leftMargin, textWidth) {
-        let currentY = startY;
-        
-        // Handle headers
-        const h1 = section.querySelector('h1');
-        const h2 = section.querySelector('h2');
-        const h3Elements = section.querySelectorAll('h3');
-        
-        if (h1) {
-            doc.setFont('times', 'bold');
-            doc.setFontSize(18);
-            const text = h1.textContent.trim();
-            doc.text(text, leftMargin + (textWidth - doc.getTextWidth(text)) / 2, currentY);
-            currentY += 20;
-        }
-        
-        if (h2) {
-            doc.setFont('times', 'bold');
-            doc.setFontSize(11);
-            const text = h2.textContent.trim();
-            doc.text(text, leftMargin, currentY);
-            doc.line(leftMargin, currentY + 3, leftMargin + textWidth, currentY + 3);
-            currentY += 18;
-        }
-        
-        // Handle paragraphs
-        const paragraphs = section.querySelectorAll('p');
-        paragraphs.forEach(p => {
-            if (!p.closest('div[style*="flex"]')) { // Skip paragraphs inside flex containers
-                doc.setFont('times', 'normal');
-                doc.setFontSize(10);
-                const text = p.textContent.trim();
-                if (text) {
-                    const lines = doc.splitTextToSize(text, textWidth);
-                    lines.forEach(line => {
-                        doc.text(line, leftMargin, currentY);
-                        currentY += 12;
-                    });
-                }
-            }
-        });
-        
-        // Handle experience/project entries
-        const entries = section.querySelectorAll('.experience-entry, .project-entry');
-        entries.forEach(entry => {
-            const titleLine = entry.querySelector('div[style*="flex"]');
-            if (titleLine) {
-                const title = titleLine.querySelector('span:first-child');
-                const date = titleLine.querySelector('span:last-child');
-                
-                if (title) {
-                    doc.setFont('times', 'bold');
-                    doc.setFontSize(11);
-                    doc.text(title.textContent.trim(), leftMargin, currentY);
-                }
-                
-                if (date) {
-                    doc.setFont('times', 'normal');
-                    doc.setFontSize(11);
-                    const dateText = date.textContent.trim();
-                    const dateWidth = doc.getTextWidth(dateText);
-                    doc.text(dateText, leftMargin + textWidth - dateWidth, currentY);
-                }
-                
-                currentY += 14;
-            }
-            
-            // Handle role/project title
-            const roleTitle = entry.querySelector('div[style*="italic"]');
-            if (roleTitle) {
-                doc.setFont('times', 'italic');
-                doc.setFontSize(11);
-                doc.text(roleTitle.textContent.trim(), leftMargin, currentY);
-                currentY += 12;
-            }
-            
-            // Handle project name (non-italic)
-            const projectTitle = entry.querySelector('div[style*="font-weight: bold"]:not([style*="italic"])');
-            if (projectTitle && !roleTitle) {
-                doc.setFont('times', 'bold');
-                doc.setFontSize(11);
-                doc.text(projectTitle.textContent.trim(), leftMargin, currentY);
-                currentY += 12;
-            }
-            
-            // Handle bullets
-            const bullets = entry.querySelectorAll('li');
-            bullets.forEach(bullet => {
-                doc.setFont('times', 'normal');
-                doc.setFontSize(10);
-                const bulletText = `• ${bullet.textContent.trim()}`;
-                const lines = doc.splitTextToSize(bulletText, textWidth - 20);
-                lines.forEach((line, lineIndex) => {
-                    doc.text(line, leftMargin + (lineIndex === 0 ? 0 : 20), currentY);
-                    currentY += 12;
-                });
-            });
-            
-            currentY += 8; // Space between entries
-        });
-        
-        currentY += 10; // Space between sections
-        return currentY;
-    }
-
-
-    extractCompanyFromJob() {
-        const jobText = document.getElementById('job-text')?.value || '';
-        const companyMatch = jobText.match(/(?:company|organization|at|join)\s*:?\s*([A-Z][a-zA-Z\s&.,]+?)(?:\s|$|,|\.|!)/i) ||
-                            jobText.match(/([A-Z][a-zA-Z\s&.,]{2,30})(?:\s+is\s+(?:seeking|looking|hiring))/i);
-        return companyMatch ? companyMatch[1].trim().replace(/[.,!]$/, '') : '';
-    }
-
-    extractRoleFromJob() {
-        const jobText = document.getElementById('job-text')?.value || '';
-        const roleMatch = jobText.match(/(?:position|role|job title|title|hiring)\s*:?\s*([A-Z][a-zA-Z\s-]+?)(?:\s|$|,|\.|!|at)/i) ||
-                         jobText.match(/(?:seeking|looking for|hiring)\s+(?:a|an)?\s*([A-Z][a-zA-Z\s-]+?)(?:\s+to|\s+who|$)/i);
-        return roleMatch ? roleMatch[1].trim().replace(/[.,!-]$/, '') : '';
-    }
-
-
     // Debug functionality
     saveLogs() {
         if (!this.lastApiCall) {
@@ -1802,7 +1633,7 @@ async downloadResumePDF() {
         
         const link = document.createElement('a');
         link.href = url;
-        link.download = `cover-letter-logs-${new Date().toISOString().split('T')[0]}.json`;
+        link.download = `cover-letter-logs-${this.getDateStamp()}.json`;
         link.click();
         
         URL.revokeObjectURL(url);

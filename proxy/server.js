@@ -118,6 +118,20 @@ function hydrateSensitiveValues(payload, originalProfile = {}) {
   return payload;
 }
 
+function extractJobContext(jobText = '') {
+  const companyMatch = jobText.match(/(?:company|organization|at|join)\s*:?\s*([A-Z][a-zA-Z\s&.,]+?)(?:\s|$|,|\.|!)/i) ||
+                      jobText.match(/([A-Z][a-zA-Z\s&.,]{2,30})(?:\s+is\s+(?:seeking|looking|hiring))/i) ||
+                      jobText.match(/(?:we|our company)\s+(?:are|is)\s+([A-Z][a-zA-Z\s&.,]+)/i);
+  const companyName = companyMatch ? companyMatch[1].trim().replace(/[.,!]$/, '') : '[COMPANY NAME]';
+
+  const roleMatch = jobText.match(/(?:position|role|job title|title|hiring)\s*:?\s*([A-Z][a-zA-Z\s-]+?)(?:\s|$|,|\.|!|at)/i) ||
+                   jobText.match(/(?:seeking|looking for|hiring)\s+(?:a|an)?\s*([A-Z][a-zA-Z\s-]+?)(?:\s+to|\s+who|$)/i) ||
+                   jobText.match(/^([A-Z][a-zA-Z\s-]+?)(?:\s+at|\s+position|\s+-)/);
+  const roleName = roleMatch ? roleMatch[1].trim().replace(/[.,!-]$/, '') : '[ROLE]';
+
+  return { companyName, roleName };
+}
+
 
 
 // Resume generation endpoint
@@ -136,16 +150,7 @@ app.post('/generateResume', async (req, res) => {
     
     console.log(`[${new Date().toISOString()}] Resume generation request started`);
     
-    // Extract company name and role from job text
-    const companyMatch = jobText.match(/(?:company|organization|at|join)\s*:?\s*([A-Z][a-zA-Z\s&.,]+?)(?:\s|$|,|\.|!)/i) ||
-                        jobText.match(/([A-Z][a-zA-Z\s&.,]{2,30})(?:\s+is\s+(?:seeking|looking|hiring))/i) ||
-                        jobText.match(/(?:we|our company)\s+(?:are|is)\s+([A-Z][a-zA-Z\s&.,]+)/i);
-    const companyName = companyMatch ? companyMatch[1].trim().replace(/[.,!]$/, '') : '[COMPANY NAME]';
-    
-    const roleMatch = jobText.match(/(?:position|role|job title|title|hiring)\s*:?\s*([A-Z][a-zA-Z\s-]+?)(?:\s|$|,|\.|!|at)/i) ||
-                     jobText.match(/(?:seeking|looking for|hiring)\s+(?:a|an)?\s*([A-Z][a-zA-Z\s-]+?)(?:\s+to|\s+who|$)/i) ||
-                     jobText.match(/^([A-Z][a-zA-Z\s-]+?)(?:\s+at|\s+position|\s+-)/);
-    const roleName = roleMatch ? roleMatch[1].trim().replace(/[.,!-]$/, '') : '[ROLE]';
+    const { companyName, roleName } = extractJobContext(jobText);
 
     console.log('Detected company:', companyName);
     console.log('Detected role:', roleName);
@@ -297,21 +302,16 @@ OUTPUT JSON (omit a section key if you have no content for it):
     };
 
     // Call OpenAI API
-    let completion;
-    try {
-      completion = await openai.chat.completions.create({
-        model: "gpt-5.4-nano-2026-03-17",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        response_format: resumeResponseFormat,
-        temperature: 0.8,
-        max_tokens: 4000
-      });
-    } catch (error) {
-      throw error;
-    }
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.4-nano-2026-03-17",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      response_format: resumeResponseFormat,
+      temperature: 0.8,
+      max_tokens: 4000
+    });
 
     const responseContent = completion.choices[0].message.content;
     
@@ -396,16 +396,7 @@ app.post('/generateCoverLetter', async (req, res) => {
     
     console.log(`[${new Date().toISOString()}] Cover letter generation request started`);
     
-    // Extract company name and role from job text
-    const companyMatch = jobText.match(/(?:company|organization|at|join)\s*:?\s*([A-Z][a-zA-Z\s&.,]+?)(?:\s|$|,|\.|!)/i) ||
-                        jobText.match(/([A-Z][a-zA-Z\s&.,]{2,30})(?:\s+is\s+(?:seeking|looking|hiring))/i) ||
-                        jobText.match(/(?:we|our company)\s+(?:are|is)\s+([A-Z][a-zA-Z\s&.,]+)/i);
-    const companyName = companyMatch ? companyMatch[1].trim().replace(/[.,!]$/, '') : '[COMPANY NAME]';
-    
-    const roleMatch = jobText.match(/(?:position|role|job title|title|hiring)\s*:?\s*([A-Z][a-zA-Z\s-]+?)(?:\s|$|,|\.|!|at)/i) ||
-                     jobText.match(/(?:seeking|looking for|hiring)\s+(?:a|an)?\s*([A-Z][a-zA-Z\s-]+?)(?:\s+to|\s+who|$)/i) ||
-                     jobText.match(/^([A-Z][a-zA-Z\s-]+?)(?:\s+at|\s+position|\s+-)/);
-    const roleName = roleMatch ? roleMatch[1].trim().replace(/[.,!-]$/, '') : '[ROLE]';
+    const { companyName, roleName } = extractJobContext(jobText);
 
     console.log('Detected company:', companyName);
     console.log('Detected role:', roleName);
@@ -682,8 +673,10 @@ app.post("/pdf/fromHtml", async (req, res) => {
     console.log("[fromHtml] PDF head(hex)   =", headHex);
     console.log("[fromHtml] PDF length      =", pdf.length);
 
-    // --- Ground-truth copy to disk (temporary debug)
-    try { require("fs").writeFileSync("./_debug_server_resume.pdf", pdf); } catch {}
+    // --- Ground-truth copy to disk (optional debug)
+    if (process.env.DEBUG_PDF === '1') {
+      try { require("fs").writeFileSync("./_debug_server_resume.pdf", pdf); } catch {}
+    }
 
     // --- Send raw bytes without charset (use end(), not send())
     const headers = {
