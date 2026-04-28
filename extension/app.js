@@ -199,48 +199,23 @@ class CoverLetterApp {
         });
 
         // Profile field updates
-        document.getElementById('profile-name')?.addEventListener('input', (e) => {
-            this.profile.name = e.target.value;
-        });
-
-        document.getElementById('profile-contact')?.addEventListener('input', (e) => {
-            this.profile.contact = e.target.value;
-        });
-
-        document.getElementById('profile-location')?.addEventListener('input', (e) => {
-            this.profile.location = e.target.value;
-        });
-
-        document.getElementById('profile-university')?.addEventListener('input', (e) => {
-            this.profile.education.university = e.target.value;
-        });
-
-        document.getElementById('profile-degree-type')?.addEventListener('input', (e) => {
-            this.profile.education.degreeType = e.target.value;
-        });
-
-        document.getElementById('profile-major')?.addEventListener('input', (e) => {
-            this.profile.education.major = e.target.value;
-        });
-
-        document.getElementById('profile-education-start')?.addEventListener('input', (e) => {
-            this.profile.education.start = e.target.value;
-        });
-
-        document.getElementById('profile-education-end')?.addEventListener('input', (e) => {
-            this.profile.education.end = e.target.value;
-        });
-
-        document.getElementById('profile-education-gpa')?.addEventListener('input', (e) => {
-            this.profile.education.gpa = e.target.value;
-        });
-
-        document.getElementById('profile-education-honors')?.addEventListener('input', (e) => {
-            this.profile.education.honors = e.target.value;
-        });
-
-        document.getElementById('profile-education-coursework')?.addEventListener('input', (e) => {
-            this.profile.education.coursework = e.target.value;
+        const profileInputBindings = [
+            { id: 'profile-name', apply: (value) => { this.profile.name = value; } },
+            { id: 'profile-contact', apply: (value) => { this.profile.contact = value; } },
+            { id: 'profile-location', apply: (value) => { this.profile.location = value; } },
+            { id: 'profile-university', apply: (value) => { this.profile.education.university = value; } },
+            { id: 'profile-degree-type', apply: (value) => { this.profile.education.degreeType = value; } },
+            { id: 'profile-major', apply: (value) => { this.profile.education.major = value; } },
+            { id: 'profile-education-start', apply: (value) => { this.profile.education.start = value; } },
+            { id: 'profile-education-end', apply: (value) => { this.profile.education.end = value; } },
+            { id: 'profile-education-gpa', apply: (value) => { this.profile.education.gpa = value; } },
+            { id: 'profile-education-honors', apply: (value) => { this.profile.education.honors = value; } },
+            { id: 'profile-education-coursework', apply: (value) => { this.profile.education.coursework = value; } }
+        ];
+        profileInputBindings.forEach(({ id, apply }) => {
+            document.getElementById(id)?.addEventListener('input', (e) => {
+                apply(e.target.value);
+            });
         });
     }
 
